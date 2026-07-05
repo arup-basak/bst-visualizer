@@ -27,7 +27,10 @@ export function BstVisualizer() {
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   function build(rawNodes: string, rawHeight: string) {
-    const parsed = bstInputSchema.safeParse({ nodes: rawNodes, height: rawHeight });
+    const parsed = bstInputSchema.safeParse({
+      nodes: rawNodes,
+      height: rawHeight,
+    });
     if (!parsed.success) {
       const fe: FieldErrors = {};
       for (const issue of parsed.error.issues) {
@@ -67,7 +70,8 @@ export function BstVisualizer() {
   const ww = wrapperRef.current?.clientWidth ?? 0;
   const wh = wrapperRef.current?.clientHeight ?? 0;
   let tipLeft = pointer.x + 16;
-  if (tipLeft + TOOLTIP_W > ww) tipLeft = Math.max(8, pointer.x - TOOLTIP_W - 16);
+  if (tipLeft + TOOLTIP_W > ww)
+    tipLeft = Math.max(8, pointer.x - TOOLTIP_W - 16);
   const tipTop = Math.max(8, Math.min(pointer.y + 16, wh - TOOLTIP_H));
 
   return (
@@ -92,7 +96,9 @@ export function BstVisualizer() {
             {errors.nodes ? (
               <p className="text-destructive text-xs">{errors.nodes}</p>
             ) : (
-              <p className="text-muted-foreground text-xs">How many nodes (1–{MAX_NODES}).</p>
+              <p className="text-muted-foreground text-xs">
+                How many nodes (1–{MAX_NODES}).
+              </p>
             )}
           </div>
 
@@ -125,11 +131,15 @@ export function BstVisualizer() {
           <div className="bg-card border-border grid grid-cols-2 gap-3 rounded-xl border p-4 shadow-sm">
             <div>
               <p className="text-muted-foreground text-xs">Nodes</p>
-              <p className="font-mono text-lg font-semibold">{layout.nodes.length}</p>
+              <p className="font-mono text-lg font-semibold">
+                {layout.nodes.length}
+              </p>
             </div>
             <div>
               <p className="text-muted-foreground text-xs">Tree height</p>
-              <p className="font-mono text-lg font-semibold">{layout.treeHeight}</p>
+              <p className="font-mono text-lg font-semibold">
+                {layout.treeHeight}
+              </p>
             </div>
           </div>
         )}
@@ -140,8 +150,12 @@ export function BstVisualizer() {
       </aside>
 
       {/* Canvas (non-scrolling positioned wrapper hosts the tooltip) */}
-      <div ref={wrapperRef} className="relative min-h-[460px] flex-1" onMouseMove={handleMove}>
-        <div className="bg-card border-border tree-surface h-full min-h-[460px] overflow-auto rounded-xl border p-2 shadow-sm">
+      <div
+        ref={wrapperRef}
+        className="relative min-h-[460px] flex-1"
+        onMouseMove={handleMove}
+      >
+        <div className="bg-card border-border tree-surface h-full min-h-115 overflow-auto rounded-xl border p-2 shadow-sm">
           {layout ? (
             <div className="flex h-max min-h-full w-max min-w-full items-center justify-center">
               <TreeCanvas
@@ -152,7 +166,7 @@ export function BstVisualizer() {
               />
             </div>
           ) : (
-            <div className="text-muted-foreground flex h-[440px] items-center justify-center text-sm">
+            <div className="text-muted-foreground flex h-110 items-center justify-center text-sm">
               Generating…
             </div>
           )}
