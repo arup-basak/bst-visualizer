@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  ArrowCounterClockwise,
+  MagnifyingGlassMinus,
+  MagnifyingGlassPlus,
+} from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +21,10 @@ type FieldErrors = { nodes?: string; height?: string };
 const TOOLTIP_W = 240;
 const TOOLTIP_H = 300;
 
+const ZOOM_MIN = 0.3;
+const ZOOM_MAX = 2.5;
+const ZOOM_STEP = 0.2;
+
 export function BstVisualizer() {
   const [nodes, setNodes] = useState("15");
   const [height, setHeight] = useState("4");
@@ -24,7 +33,11 @@ export function BstVisualizer() {
   const [generationId, setGenerationId] = useState(0);
   const [hovered, setHovered] = useState<HoverTarget>(null);
   const [pointer, setPointer] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
   const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const zoomBy = (delta: number) =>
+    setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round((z + delta) * 100) / 100)));
 
   function build(rawNodes: string, rawHeight: string) {
     const parsed = bstInputSchema.safeParse({
@@ -45,6 +58,7 @@ export function BstVisualizer() {
     const tree = generateBst(parsed.data.nodes, parsed.data.height);
     setLayout(layoutTree(tree));
     setHovered(null);
+    setZoom(1);
     setGenerationId((id) => id + 1);
   }
 
@@ -144,18 +158,19 @@ export function BstVisualizer() {
           </div>
         )}
 
-        <p className="text-muted-foreground px-1 text-xs">
-          Hover a node or edge in the canvas to inspect its properties.
+        <p className="text-muted-foreground px-1 text-xs leading-relaxed">
+          Hover a node or edge to inspect it · drag nodes to rearrange · scroll to
+          pan · zoom with the controls on the canvas.
         </p>
       </aside>
 
       {/* Canvas (non-scrolling positioned wrapper hosts the tooltip) */}
       <div
         ref={wrapperRef}
-        className="relative min-h-[460px] flex-1"
+        className="relative h-[60vh] min-h-[360px] w-full min-w-0 flex-1 lg:h-[74vh]"
         onMouseMove={handleMove}
       >
-        <div className="bg-card border-border tree-surface h-full min-h-115 overflow-auto rounded-xl border p-2 shadow-sm">
+        <div className="bg-card border-border tree-surface h-full w-full overflow-auto rounded-xl border p-2 shadow-sm">
           {layout ? (
             <div className="flex h-max min-h-full w-max min-w-full items-center justify-center">
               <TreeCanvas
@@ -163,14 +178,58 @@ export function BstVisualizer() {
                 generationId={generationId}
                 hovered={hovered}
                 onHover={setHovered}
+                zoom={zoom}
               />
             </div>
           ) : (
-            <div className="text-muted-foreground flex h-110 items-center justify-center text-sm">
+            <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
               Generating…
             </div>
           )}
         </div>
+
+        {/* Zoom controls — scroll/trackpad pans the canvas */}
+        {layout && (
+          <div className="border-border bg-card/90 absolute top-3 right-3 z-20 flex items-center gap-0.5 rounded-lg border p-1 shadow-sm backdrop-blur">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => zoomBy(-ZOOM_STEP)}
+              disabled={zoom <= ZOOM_MIN}
+              aria-label="Zoom out"
+            >
+              <MagnifyingGlassMinus />
+            </Button>
+            <button
+              type="button"
+              onClick={() => setZoom(1)}
+              className="text-muted-foreground hover:text-foreground min-w-11 text-center font-mono text-xs tabular-nums"
+              aria-label="Reset zoom to 100%"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => zoomBy(ZOOM_STEP)}
+              disabled={zoom >= ZOOM_MAX}
+              aria-label="Zoom in"
+            >
+              <MagnifyingGlassPlus />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setZoom(1)}
+              aria-label="Reset view"
+            >
+              <ArrowCounterClockwise />
+            </Button>
+          </div>
+        )}
 
         {layout && hovered && (
           <div

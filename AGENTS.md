@@ -10,3 +10,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - use tailwind for the UI and stuffs
 - use motion
 - always prefer to use kebab-case for file names
+- use phosphor icons instead of lucide reacts

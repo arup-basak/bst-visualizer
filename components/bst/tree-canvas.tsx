@@ -26,6 +26,7 @@ type TreeCanvasProps = {
   generationId: number;
   hovered: HoverTarget;
   onHover: (target: HoverTarget) => void;
+  zoom: number;
 };
 
 type Offset = { x: number; y: number };
@@ -33,7 +34,7 @@ type Offsets = Record<number, Offset>;
 
 const ZERO: Offset = { x: 0, y: 0 };
 
-export function TreeCanvas({ layout, generationId, hovered, onHover }: TreeCanvasProps) {
+export function TreeCanvas({ layout, generationId, hovered, onHover, zoom }: TreeCanvasProps) {
   const { nodes, edges, width, height } = layout;
 
   // Committed per-node offsets (accumulated across finished drags) plus the
@@ -67,15 +68,24 @@ export function TreeCanvas({ layout, generationId, hovered, onHover }: TreeCanva
     onHover(null);
   }
 
+  // Drag deltas are in screen pixels; the SVG is rendered at `zoom` scale, so
+  // convert back to layout units before applying them to node coordinates.
   function handleDragMove(event: DragMoveEvent) {
-    setActive({ id: Number(event.active.id), dx: event.delta.x, dy: event.delta.y });
+    setActive({
+      id: Number(event.active.id),
+      dx: event.delta.x / zoom,
+      dy: event.delta.y / zoom,
+    });
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const id = Number(event.active.id);
     setOffsets((prev) => {
       const base = prev[id] ?? ZERO;
-      return { ...prev, [id]: { x: base.x + event.delta.x, y: base.y + event.delta.y } };
+      return {
+        ...prev,
+        [id]: { x: base.x + event.delta.x / zoom, y: base.y + event.delta.y / zoom },
+      };
     });
     setActive(null);
   }
@@ -93,9 +103,9 @@ export function TreeCanvas({ layout, generationId, hovered, onHover }: TreeCanva
     >
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        width={width}
-        height={height}
-        className="h-auto max-w-none select-none"
+        width={width * zoom}
+        height={height * zoom}
+        className="max-w-none select-none"
         role="img"
         aria-label="Binary search tree visualization"
       >
