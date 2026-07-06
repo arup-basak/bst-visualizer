@@ -10,7 +10,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { generateBst, layoutTree, type BSTNode, type TreeLayout } from "@/lib/bst";
+import {
+  generateBst,
+  layoutTree,
+  type BSTNode,
+  type TreeLayout,
+} from "@/lib/bst";
 import {
   contains,
   insert,
@@ -75,9 +80,18 @@ export function BstVisualizer() {
   // Bumped on a full reset to remount the operations menu (closing its panel).
   const [resetCount, setResetCount] = useState(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  // A structural edit (insert/remove) deferred until its search-path walk
+  // finishes animating. Held in a ref so the reveal effect can fire it without
+  // re-subscribing. Flushed early if the animation is interrupted.
+  const pendingCommit = useRef<(() => void) | null>(null);
 
   const zoomBy = (delta: number) =>
-    setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round((z + delta) * 100) / 100)));
+    setZoom((z) =>
+      Math.min(
+        ZOOM_MAX,
+        Math.max(ZOOM_MIN, Math.round((z + delta) * 100) / 100),
+      ),
+    );
 
   // Commit a new tree root: relayout and reset transient view state.
   // `replay` (generate/reset) bumps generationId to replay the full staggered
@@ -96,9 +110,26 @@ export function BstVisualizer() {
   }
 
   function clearHighlight() {
+    // If a walk is interrupted before it finishes, commit its edit now so the
+    // tree stays consistent (applyRoot resets the transient state itself).
+    if (pendingCommit.current) {
+      const commit = pendingCommit.current;
+      pendingCommit.current = null;
+      commit();
+      return;
+    }
     setHighlight(null);
     setTraverseSeq(null);
     setTraverseStep(0);
+  }
+
+  // Animate a search-path walk (reusing the traversal reveal machinery), then
+  // run `commit` — the deferred insert/remove — once the last node is reached.
+  function walkThenCommit(path: number[], commit: () => void) {
+    setHighlight(null);
+    setTraverseSeq(path);
+    setTraverseStep(0);
+    pendingCommit.current = commit;
   }
 
   function build(rawNodes: string, rawHeight: string) {
@@ -143,18 +174,31 @@ export function BstVisualizer() {
       setTraverseSeq(null);
       return { ok: false, message: `${value} is already in the tree.` };
     }
+    // Walk the comparison path down to the insertion point, then drop the new
+    // node in (it animates in via the incremental edit).
     const newRoot = insert(root, value);
-    applyRoot(newRoot, false);
-    setHighlight({ values: searchPath(newRoot, value), active: value });
-    return { ok: true, message: `Inserted ${value}.` };
+    walkThenCommit(searchPath(root, value), () => {
+      applyRoot(newRoot, false);
+      setHighlight({ values: searchPath(newRoot, value), active: value });
+    });
+    return {
+      ok: true,
+      message: `Inserting ${value} — walking the search path…`,
+    };
   }
 
   function handleRemove(value: number): OpFeedback {
     if (!contains(root, value)) {
       return { ok: false, message: `${value} is not in the tree.` };
     }
-    applyRoot(remove(root, value), false);
-    return { ok: true, message: `Removed ${value}.` };
+    // Walk the search path down to the target node, then remove it (it animates
+    // out via the incremental edit).
+    const newRoot = remove(root, value);
+    walkThenCommit(searchPath(root, value), () => applyRoot(newRoot, false));
+    return {
+      ok: true,
+      message: `Removing ${value} — walking the search path…`,
+    };
   }
 
   function handleSelect(k: number): OpFeedback {
@@ -181,7 +225,10 @@ export function BstVisualizer() {
     const p = predecessor(root, value);
     if (p === null) {
       clearHighlight();
-      return { ok: false, message: `No predecessor — ${value} is ≤ the minimum.` };
+      return {
+        ok: false,
+        message: `No predecessor — ${value} is ≤ the minimum.`,
+      };
     }
     setTraverseSeq(null);
     setHighlight({ values: [p], active: p });
@@ -193,7 +240,10 @@ export function BstVisualizer() {
     const s = successor(root, value);
     if (s === null) {
       clearHighlight();
-      return { ok: false, message: `No successor — ${value} is ≥ the maximum.` };
+      return {
+        ok: false,
+        message: `No successor — ${value} is ≥ the maximum.`,
+      };
     }
     setTraverseSeq(null);
     setHighlight({ values: [s], active: s });
@@ -207,9 +257,18 @@ export function BstVisualizer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reveal a traversal one node at a time.
+  // Reveal a traversal / search-path walk one node at a time.
   useEffect(() => {
-    if (!traverseSeq || traverseStep >= traverseSeq.length) return;
+    if (!traverseSeq) return;
+    // Walk finished: if this was an insert/remove, commit the edit after a short
+    // pause on the final node so the structural change is easy to follow.
+    if (traverseStep >= traverseSeq.length) {
+      if (!pendingCommit.current) return;
+      const commit = pendingCommit.current;
+      pendingCommit.current = null;
+      const id = setTimeout(commit, 360);
+      return () => clearTimeout(id);
+    }
     const id = setTimeout(() => setTraverseStep((s) => s + 1), 420);
     return () => clearTimeout(id);
   }, [traverseSeq, traverseStep]);
@@ -325,18 +384,19 @@ export function BstVisualizer() {
         )}
 
         <p className="text-muted-foreground px-1 text-xs leading-relaxed">
-          Hover a node or edge to inspect it · drag nodes to rearrange · scroll to
-          pan · zoom with the controls on the canvas. Open{" "}
-          <span className="text-foreground font-medium">Operations</span> (top-left
-          or press <kbd className="font-mono">b</kbd>) to insert, remove, select
-          the k-th smallest, traverse, or find a predecessor / successor.
+          Hover a node or edge to inspect it · drag nodes to rearrange · scroll
+          to pan · zoom with the controls on the canvas. Open{" "}
+          <span className="text-foreground font-medium">Operations</span>{" "}
+          (top-left or press <kbd className="font-mono">b</kbd>) to insert,
+          remove, select the k-th smallest, traverse, or find a predecessor /
+          successor.
         </p>
       </aside>
 
       {/* Canvas (non-scrolling positioned wrapper hosts the tooltip) */}
       <div
         ref={wrapperRef}
-        className="relative h-[60vh] min-h-[360px] w-full min-w-0 flex-1 lg:h-[74vh]"
+        className="relative h-[60vh] min-h-90 w-full min-w-0 flex-1 lg:h-[74vh]"
         onMouseMove={handleMove}
       >
         <div className="bg-card border-border tree-surface h-full w-full overflow-auto rounded-xl border p-2 shadow-sm">
