@@ -51,9 +51,12 @@ const ZOOM_MIN = 0.3;
 const ZOOM_MAX = 2.5;
 const ZOOM_STEP = 0.2;
 
+const DEFAULT_NODES = "15";
+const DEFAULT_HEIGHT = "4";
+
 export function BstVisualizer() {
-  const [nodes, setNodes] = useState("15");
-  const [height, setHeight] = useState("4");
+  const [nodes, setNodes] = useState(DEFAULT_NODES);
+  const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [root, setRoot] = useState<BSTNode | null>(null);
   const [layout, setLayout] = useState<TreeLayout | null>(null);
@@ -66,6 +69,8 @@ export function BstVisualizer() {
   const [highlight, setHighlight] = useState<Highlight | null>(null);
   const [traverseSeq, setTraverseSeq] = useState<number[] | null>(null);
   const [traverseStep, setTraverseStep] = useState(0);
+  // Bumped on a full reset to remount the operations menu (closing its panel).
+  const [resetCount, setResetCount] = useState(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const zoomBy = (delta: number) =>
@@ -108,6 +113,19 @@ export function BstVisualizer() {
     const tree = generateBst(parsed.data.nodes, parsed.data.height);
     applyRoot(tree);
     setZoom(1);
+  }
+
+  // Reset the canvas: clear the tree to an empty state and restore the default
+  // inputs — but do NOT regenerate a new tree. applyRoot(null) clears the root,
+  // highlights, hover, drag offsets and traversal; bumping resetCount remounts
+  // the operations menu so any open panel closes too.
+  function handleReset() {
+    setNodes(DEFAULT_NODES);
+    setHeight(DEFAULT_HEIGHT);
+    setErrors({});
+    setResetCount((c) => c + 1);
+    setZoom(1);
+    applyRoot(null);
   }
 
   const nodeCount = layout?.nodes.length ?? 0;
@@ -265,9 +283,21 @@ export function BstVisualizer() {
             )}
           </div>
 
-          <Button type="submit" className="w-full">
-            Generate BST
-          </Button>
+          <div className="flex gap-2">
+            <Button type="submit" className="flex-1">
+              Generate BST
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleReset}
+              aria-label="Reset the canvas"
+              title="Reset the canvas"
+            >
+              <ArrowCounterClockwise />
+              Reset
+            </Button>
+          </div>
         </form>
 
         {layout && (
@@ -281,7 +311,7 @@ export function BstVisualizer() {
             <div>
               <p className="text-muted-foreground text-xs">Tree height</p>
               <p className="font-mono text-lg font-semibold">
-                {layout.treeHeight}
+                {layout.treeHeight < 0 ? "—" : layout.treeHeight}
               </p>
             </div>
           </div>
@@ -325,6 +355,7 @@ export function BstVisualizer() {
         {/* Operations menu bar — toggle open with animations, or drive it
             entirely from the keyboard (b / i / r / k / t / p / s, Esc). */}
         <OperationsMenu
+          key={resetCount}
           disabled={!layout}
           onInsert={handleInsert}
           onRemove={handleRemove}
