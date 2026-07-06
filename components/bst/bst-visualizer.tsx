@@ -69,6 +69,9 @@ export function BstVisualizer() {
   const [highlight, setHighlight] = useState<Highlight | null>(null);
   const [traverseSeq, setTraverseSeq] = useState<number[] | null>(null);
   const [traverseStep, setTraverseStep] = useState(0);
+  // True for structural edits (insert/remove) so the canvas animates only the
+  // changed node instead of replaying the whole tree.
+  const [incremental, setIncremental] = useState(false);
   // Bumped on a full reset to remount the operations menu (closing its panel).
   const [resetCount, setResetCount] = useState(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -76,16 +79,20 @@ export function BstVisualizer() {
   const zoomBy = (delta: number) =>
     setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round((z + delta) * 100) / 100)));
 
-  // Commit a new tree root: relayout and reset transient view state. A bumped
-  // generationId replays the grow animation and clears any drag offsets.
-  function applyRoot(newRoot: BSTNode | null) {
+  // Commit a new tree root: relayout and reset transient view state.
+  // `replay` (generate/reset) bumps generationId to replay the full staggered
+  // grow animation and clear drag offsets; an incremental edit (insert/remove)
+  // leaves generationId alone so only the changed node animates and drags/
+  // positions of the surviving nodes are preserved.
+  function applyRoot(newRoot: BSTNode | null, replay = true) {
     setRoot(newRoot);
     setLayout(layoutTree(newRoot));
     setHovered(null);
     setHighlight(null);
     setTraverseSeq(null);
     setTraverseStep(0);
-    setGenerationId((id) => id + 1);
+    setIncremental(!replay);
+    if (replay) setGenerationId((id) => id + 1);
   }
 
   function clearHighlight() {
@@ -137,7 +144,7 @@ export function BstVisualizer() {
       return { ok: false, message: `${value} is already in the tree.` };
     }
     const newRoot = insert(root, value);
-    applyRoot(newRoot);
+    applyRoot(newRoot, false);
     setHighlight({ values: searchPath(newRoot, value), active: value });
     return { ok: true, message: `Inserted ${value}.` };
   }
@@ -146,7 +153,7 @@ export function BstVisualizer() {
     if (!contains(root, value)) {
       return { ok: false, message: `${value} is not in the tree.` };
     }
-    applyRoot(remove(root, value));
+    applyRoot(remove(root, value), false);
     return { ok: true, message: `Removed ${value}.` };
   }
 
@@ -343,6 +350,7 @@ export function BstVisualizer() {
                 zoom={zoom}
                 highlightValues={highlightValues}
                 activeValue={activeValue}
+                incremental={incremental}
               />
             </div>
           ) : (
