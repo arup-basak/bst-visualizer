@@ -25,3 +25,19 @@ export const bstInputSchema = z
   });
 
 export type BstInput = z.infer<typeof bstInputSchema>;
+
+// Operation inputs (insert / remove / predecessor / successor take a value;
+// select takes a rank k). Range checks that depend on the current tree (e.g.
+// k ≤ node count) are done at the call site so messages can be specific.
+export const opValueSchema = z.coerce
+  .number({ message: "Enter a number" })
+  .int("Whole number only")
+  .min(0, "Must be ≥ 0")
+  .max(9999, "Too large");
+
+/** Parse an operation input string, returning the number or an error message. */
+export function parseOpValue(raw: string): { value: number } | { error: string } {
+  const parsed = opValueSchema.safeParse(raw);
+  if (parsed.success) return { value: parsed.data };
+  return { error: parsed.error.issues[0]?.message ?? "Invalid number" };
+}

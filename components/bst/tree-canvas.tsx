@@ -27,14 +27,28 @@ type TreeCanvasProps = {
   hovered: HoverTarget;
   onHover: (target: HoverTarget) => void;
   zoom: number;
+  /** Node values on an operation's path/sequence (rendered highlighted). */
+  highlightValues?: Set<number>;
+  /** The single emphasized value (e.g. an operation's result / current step). */
+  activeValue?: number | null;
 };
+
+const EMPTY_HIGHLIGHT: Set<number> = new Set();
 
 type Offset = { x: number; y: number };
 type Offsets = Record<number, Offset>;
 
 const ZERO: Offset = { x: 0, y: 0 };
 
-export function TreeCanvas({ layout, generationId, hovered, onHover, zoom }: TreeCanvasProps) {
+export function TreeCanvas({
+  layout,
+  generationId,
+  hovered,
+  onHover,
+  zoom,
+  highlightValues = EMPTY_HIGHLIGHT,
+  activeValue = null,
+}: TreeCanvasProps) {
   const { nodes, edges, width, height } = layout;
 
   // Committed per-node offsets (accumulated across finished drags) plus the
@@ -102,13 +116,17 @@ export function TreeCanvas({ layout, generationId, hovered, onHover, zoom }: Tre
       onDragCancel={() => setActive(null)}
     >
       <svg
-        viewBox={`0 0 ${width} ${height}`}
+        viewBox={`0 0 ${width * zoom} ${height * zoom}`}
         width={width * zoom}
         height={height * zoom}
-        className="max-w-none select-none"
+        className="block max-w-none select-none"
         role="img"
         aria-label="Binary search tree visualization"
       >
+        {/* viewBox matches the rendered pixel size; zoom is applied as a
+            transform so the drawing always fills the canvas exactly (no
+            preserveAspectRatio letterboxing / overflow). */}
+        <g transform={`scale(${zoom})`}>
         <AnimatePresence mode="wait">
           <motion.g
             key={generationId}
@@ -119,7 +137,10 @@ export function TreeCanvas({ layout, generationId, hovered, onHover, zoom }: Tre
           >
             {/* Edges (drawn under the nodes) — endpoints track dragged nodes. */}
             {edges.map((edge) => {
-              const edgeActive = hoveredEdgeId === edge.id;
+              const edgeHighlighted =
+                highlightValues.has(edge.from.value) &&
+                highlightValues.has(edge.to.value);
+              const edgeActive = hoveredEdgeId === edge.id || edgeHighlighted;
               const from = posOf(edge.from);
               const to = posOf(edge.to);
               const delay = edge.to.depth * 0.06;
@@ -162,11 +183,14 @@ export function TreeCanvas({ layout, generationId, hovered, onHover, zoom }: Tre
                 pos={posOf(node)}
                 dragging={active?.id === node.id}
                 hoverActive={hoveredNodeId === node.id}
+                highlighted={highlightValues.has(node.value)}
+                emphasized={activeValue === node.value}
                 onHover={onHover}
               />
             ))}
           </motion.g>
         </AnimatePresence>
+        </g>
       </svg>
     </DndContext>
   );
@@ -177,12 +201,25 @@ type DraggableNodeProps = {
   pos: { x: number; y: number };
   dragging: boolean;
   hoverActive: boolean;
+  highlighted: boolean;
+  emphasized: boolean;
   onHover: (target: HoverTarget) => void;
 };
 
-function DraggableNode({ node, pos, dragging, hoverActive, onHover }: DraggableNodeProps) {
+function DraggableNode({
+  node,
+  pos,
+  dragging,
+  hoverActive,
+  highlighted,
+  emphasized,
+  onHover,
+}: DraggableNodeProps) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: node.id });
-  const active = hoverActive || dragging;
+  // A node stands out when hovered, dragged, or emphasized by an operation
+  // result. Path nodes are "highlighted" — ringed but not filled.
+  const active = hoverActive || dragging || emphasized;
+  const ringed = active || highlighted;
   const delay = node.depth * 0.06 + 0.1;
 
   return (
@@ -199,10 +236,10 @@ function DraggableNode({ node, pos, dragging, hoverActive, onHover }: DraggableN
         cx={node.x}
         cy={node.y}
         fill={active ? "var(--tree-node-active)" : "var(--tree-node)"}
-        stroke={active ? "var(--tree-highlight)" : "var(--tree-node-stroke)"}
-        strokeWidth={active ? 3 : 2}
+        stroke={ringed ? "var(--tree-highlight)" : "var(--tree-node-stroke)"}
+        strokeWidth={ringed ? 3 : 2}
         initial={{ r: 0, opacity: 0 }}
-        animate={{ r: active ? NODE_RADIUS + 3 : NODE_RADIUS, opacity: 1 }}
+        animate={{ r: ringed ? NODE_RADIUS + 3 : NODE_RADIUS, opacity: 1 }}
         transition={{
           r: { type: "spring", stiffness: 320, damping: 22, delay: active ? 0 : delay },
           opacity: { delay, duration: 0.2 },

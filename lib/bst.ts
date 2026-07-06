@@ -18,6 +18,7 @@ export type LayoutNode = {
   rightValue: number | null;
   subtreeHeight: number; // edges on the longest downward path (leaf = 0)
   balanceFactor: number; // height(left) - height(right)
+  size: number; // number of nodes in this subtree, including itself
   isLeaf: boolean;
 };
 
@@ -132,6 +133,12 @@ function heightOf(n: BSTNode | null): number {
   return 1 + Math.max(heightOf(n.left), heightOf(n.right));
 }
 
+/** Number of nodes in the subtree rooted at `n` (including `n`). */
+function sizeOf(n: BSTNode | null): number {
+  if (!n) return 0;
+  return 1 + sizeOf(n.left) + sizeOf(n.right);
+}
+
 /** Assign screen coordinates + per-node stats and build the edge list. */
 export function layoutTree(root: BSTNode | null): TreeLayout {
   const nodes: LayoutNode[] = [];
@@ -163,6 +170,7 @@ export function layoutTree(root: BSTNode | null): TreeLayout {
       rightValue: n.right?.value ?? null,
       subtreeHeight: Math.max(hL, hR) + 1,
       balanceFactor: hL - hR,
+      size: sizeOf(n),
       isLeaf: !n.left && !n.right,
     };
     inorderIndex++;

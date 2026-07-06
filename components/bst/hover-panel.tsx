@@ -46,6 +46,7 @@ export function HoverPanel({ hovered }: { hovered: HoverTarget }) {
             </div>
             <Row label="Value" value={hovered.node.value} />
             <Row label="Depth" value={hovered.node.depth} />
+            <Row label="Subtree size" value={hovered.node.size} />
             <Row label="Subtree height" value={hovered.node.subtreeHeight} />
             <Row
               label="Balance factor"

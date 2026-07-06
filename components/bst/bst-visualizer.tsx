@@ -10,11 +10,37 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { generateBst, layoutTree, type TreeLayout } from "@/lib/bst";
+import { generateBst, layoutTree, type BSTNode, type TreeLayout } from "@/lib/bst";
+import {
+  contains,
+  insert,
+  kthSmallest,
+  predecessor,
+  remove,
+  searchPath,
+  successor,
+  traverse,
+  type TraversalOrder,
+} from "@/lib/bst-operations";
 import { MAX_HEIGHT, MAX_NODES, bstInputSchema } from "@/lib/bst-schema";
 
 import { HoverPanel } from "./hover-panel";
+import { OperationsMenu, type OpFeedback } from "./operations-menu";
 import { TreeCanvas, type HoverTarget } from "./tree-canvas";
+
+type Highlight = { values: number[]; active: number | null };
+
+const ORDER_LABELS: Record<TraversalOrder, string> = {
+  inorder: "In-order",
+  preorder: "Pre-order",
+  postorder: "Post-order",
+};
+
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]);
+}
 
 type FieldErrors = { nodes?: string; height?: string };
 
@@ -29,15 +55,39 @@ export function BstVisualizer() {
   const [nodes, setNodes] = useState("15");
   const [height, setHeight] = useState("4");
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [root, setRoot] = useState<BSTNode | null>(null);
   const [layout, setLayout] = useState<TreeLayout | null>(null);
   const [generationId, setGenerationId] = useState(0);
   const [hovered, setHovered] = useState<HoverTarget>(null);
   const [pointer, setPointer] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  // Static highlight (search/select/pred/succ paths), and a separate animated
+  // traversal sequence that reveals one node at a time.
+  const [highlight, setHighlight] = useState<Highlight | null>(null);
+  const [traverseSeq, setTraverseSeq] = useState<number[] | null>(null);
+  const [traverseStep, setTraverseStep] = useState(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const zoomBy = (delta: number) =>
     setZoom((z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round((z + delta) * 100) / 100)));
+
+  // Commit a new tree root: relayout and reset transient view state. A bumped
+  // generationId replays the grow animation and clears any drag offsets.
+  function applyRoot(newRoot: BSTNode | null) {
+    setRoot(newRoot);
+    setLayout(layoutTree(newRoot));
+    setHovered(null);
+    setHighlight(null);
+    setTraverseSeq(null);
+    setTraverseStep(0);
+    setGenerationId((id) => id + 1);
+  }
+
+  function clearHighlight() {
+    setHighlight(null);
+    setTraverseSeq(null);
+    setTraverseStep(0);
+  }
 
   function build(rawNodes: string, rawHeight: string) {
     const parsed = bstInputSchema.safeParse({
@@ -56,10 +106,73 @@ export function BstVisualizer() {
     }
     setErrors({});
     const tree = generateBst(parsed.data.nodes, parsed.data.height);
-    setLayout(layoutTree(tree));
-    setHovered(null);
+    applyRoot(tree);
     setZoom(1);
-    setGenerationId((id) => id + 1);
+  }
+
+  const nodeCount = layout?.nodes.length ?? 0;
+
+  function handleInsert(value: number): OpFeedback {
+    if (contains(root, value)) {
+      setHighlight({ values: searchPath(root, value), active: value });
+      setTraverseSeq(null);
+      return { ok: false, message: `${value} is already in the tree.` };
+    }
+    const newRoot = insert(root, value);
+    applyRoot(newRoot);
+    setHighlight({ values: searchPath(newRoot, value), active: value });
+    return { ok: true, message: `Inserted ${value}.` };
+  }
+
+  function handleRemove(value: number): OpFeedback {
+    if (!contains(root, value)) {
+      return { ok: false, message: `${value} is not in the tree.` };
+    }
+    applyRoot(remove(root, value));
+    return { ok: true, message: `Removed ${value}.` };
+  }
+
+  function handleSelect(k: number): OpFeedback {
+    if (!root) return { ok: false, message: "The tree is empty." };
+    if (k < 1 || k > nodeCount)
+      return { ok: false, message: `k must be between 1 and ${nodeCount}.` };
+    const { value, path } = kthSmallest(root, k);
+    setTraverseSeq(null);
+    setHighlight({ values: path, active: value });
+    return { ok: true, message: `${ordinal(k)} smallest value is ${value}.` };
+  }
+
+  function handleTraverse(order: TraversalOrder): OpFeedback {
+    if (!root) return { ok: false, message: "The tree is empty." };
+    const seq = traverse(root, order);
+    setHighlight(null);
+    setTraverseSeq(seq);
+    setTraverseStep(0);
+    return { ok: true, message: `${ORDER_LABELS[order]}: ${seq.join(" → ")}` };
+  }
+
+  function handlePredecessor(value: number): OpFeedback {
+    if (!root) return { ok: false, message: "The tree is empty." };
+    const p = predecessor(root, value);
+    if (p === null) {
+      clearHighlight();
+      return { ok: false, message: `No predecessor — ${value} is ≤ the minimum.` };
+    }
+    setTraverseSeq(null);
+    setHighlight({ values: [p], active: p });
+    return { ok: true, message: `predecessor(${value}) = ${p}.` };
+  }
+
+  function handleSuccessor(value: number): OpFeedback {
+    if (!root) return { ok: false, message: "The tree is empty." };
+    const s = successor(root, value);
+    if (s === null) {
+      clearHighlight();
+      return { ok: false, message: `No successor — ${value} is ≥ the maximum.` };
+    }
+    setTraverseSeq(null);
+    setHighlight({ values: [s], active: s });
+    return { ok: true, message: `successor(${value}) = ${s}.` };
   }
 
   // Build an initial tree after mount (keeps SSR output deterministic / avoids
@@ -68,6 +181,22 @@ export function BstVisualizer() {
     build(nodes, height);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Reveal a traversal one node at a time.
+  useEffect(() => {
+    if (!traverseSeq || traverseStep >= traverseSeq.length) return;
+    const id = setTimeout(() => setTraverseStep((s) => s + 1), 420);
+    return () => clearTimeout(id);
+  }, [traverseSeq, traverseStep]);
+
+  const highlightValues = traverseSeq
+    ? new Set(traverseSeq.slice(0, traverseStep))
+    : new Set(highlight?.values ?? []);
+  const activeValue = traverseSeq
+    ? traverseStep > 0
+      ? traverseSeq[traverseStep - 1]
+      : null
+    : (highlight?.active ?? null);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -160,7 +289,10 @@ export function BstVisualizer() {
 
         <p className="text-muted-foreground px-1 text-xs leading-relaxed">
           Hover a node or edge to inspect it · drag nodes to rearrange · scroll to
-          pan · zoom with the controls on the canvas.
+          pan · zoom with the controls on the canvas. Open{" "}
+          <span className="text-foreground font-medium">Operations</span> (top-left
+          or press <kbd className="font-mono">b</kbd>) to insert, remove, select
+          the k-th smallest, traverse, or find a predecessor / successor.
         </p>
       </aside>
 
@@ -179,6 +311,8 @@ export function BstVisualizer() {
                 hovered={hovered}
                 onHover={setHovered}
                 zoom={zoom}
+                highlightValues={highlightValues}
+                activeValue={activeValue}
               />
             </div>
           ) : (
@@ -187,6 +321,19 @@ export function BstVisualizer() {
             </div>
           )}
         </div>
+
+        {/* Operations menu bar — toggle open with animations, or drive it
+            entirely from the keyboard (b / i / r / k / t / p / s, Esc). */}
+        <OperationsMenu
+          disabled={!layout}
+          onInsert={handleInsert}
+          onRemove={handleRemove}
+          onSelect={handleSelect}
+          onTraverse={handleTraverse}
+          onPredecessor={handlePredecessor}
+          onSuccessor={handleSuccessor}
+          onClear={clearHighlight}
+        />
 
         {/* Zoom controls — scroll/trackpad pans the canvas */}
         {layout && (
